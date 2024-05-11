@@ -39,8 +39,56 @@ import { LaunchCodes } from '../typechain-types'
  *  őrcsere közben valaki be akar lépni -> sikertelen
  */
 
+/**
+ * typescript interface for the fixture
+ */
+interface Fixture {
+    launchCodes: LaunchCodes & { deploymentTransaction: () => ContractTransactionResponse }
+    firstGuard: HardhatEthersSigner
+    secondGuard: HardhatEthersSigner
+    JoeStaff: HardhatEthersSigner
+    BobStaff: HardhatEthersSigner
+}
 
 describe('LaunchCodes', () => {
+    /**
+     * létrehozza a szerződést és ad addresseket a két őrnek és egy staffnak
+     * @returns a fixture with the launchCodes contract and the signers
+     */
+    async function deployLaunchCodesFixture(): Promise<Fixture> {
 
-});
+        const [firstGuard, secondGuard, JoeStaff, BobStaff] = await hre.ethers.getSigners() // 2 őr addresszének lekérése ethereumtól
+        if (firstGuard === undefined || secondGuard === undefined || JoeStaff === undefined || BobStaff === undefined) {
+            throw new Error('Could not get ethers signers')
+        }
+
+        const LaunchCodes = await hre.ethers.getContractFactory('LaunchCodes')
+        const launchCodes = await LaunchCodes.deploy(firstGuard.address, secondGuard.address) // 2 őr addresszének átadása a konstruktorba
+
+        return { launchCodes, firstGuard, secondGuard, JoeStaff, BobStaff }
+    };
+
+    describe('Entries', () => {
+        it('Should let Staff enter', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Enter();
+
+            //0x a hexadecimális formátum miatt kell, amit a log-olt cím nem tartalmaz, de a tesztérték igen
+            expect('0x' + (await launchCodes.getLog()).at(0)?.toLowerCase()).to.equal(JoeStaff.address.toLowerCase() + ' entered');
+        });
+
+        it('Should revert non guard entry approve', async () => {
+            const { launchCodes,  JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            await expect(launchCodes.connect(JoeStaff).approveEntry(JoeStaff.address)).to.be.revertedWith('You are not a guard');
+        });
+
+    });
+
+
+    });
 

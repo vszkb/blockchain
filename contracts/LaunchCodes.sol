@@ -102,7 +102,7 @@ contract LaunchCodes {
         isDoorOpen = true;
         staff.push(msg.sender);
         isDoorOpen = false;
-        log.push(string(abi.encodePacked(msg.sender, " entered")));
+        log.push(string.concat(toAsciiString(msg.sender), " entered"));
         delete addressToRequest[msg.sender];
     }
 
@@ -123,7 +123,7 @@ contract LaunchCodes {
         isDoorOpen = true;
         removeFromStaff(msg.sender);
         isDoorOpen = false;
-        log.push(string(abi.encodePacked(msg.sender, " exited")));
+        log.push(string.concat(toAsciiString(msg.sender), " exited"));
         delete addressToRequest[msg.sender];
 
         if (isShiftChangeInProgress && !lastChangeWasFirstGuard) {
@@ -208,6 +208,34 @@ contract LaunchCodes {
                 staff.pop();
             }
         }
+    }
+
+    /**
+     * forrás: https://ethereum.stackexchange.com/questions/8346/convert-address-to-string
+     * felhasználás ideje: 2024.05.11.
+     * 
+     * segít addrest string-gé alakítani a logoláshoz
+     * @param x address
+     */
+    function toAsciiString(address x) internal pure returns (string memory) {
+        bytes memory s = new bytes(40);
+        for (uint i = 0; i < 20; i++) {
+            bytes1 b = bytes1(uint8(uint(uint160(x)) / (2**(8*(19 - i)))));
+            bytes1 hi = bytes1(uint8(b) / 16);
+            bytes1 lo = bytes1(uint8(b) - 16 * uint8(hi));
+            s[2*i] = char(hi);
+            s[2*i+1] = char(lo);            
+        }
+        return string(s);
+    }
+
+    /**
+     * forrás: https://ethereum.stackexchange.com/questions/8346/convert-address-to-string
+     * felhasználás ideje: 2024.05.11.
+     */
+    function char(bytes1 b) internal pure returns (bytes1 c) {
+        if (uint8(b) < 10) return bytes1(uint8(b) + 0x30);
+        else return bytes1(uint8(b) + 0x57);
     }
     
 }
