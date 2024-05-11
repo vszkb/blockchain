@@ -5,6 +5,7 @@ contract LaunchCodes {
     address public secondGuard;
     address[] public staff;
     string[] public log;
+
     bool public isShiftChangeInProgress = false;
     bool public lastChangeWasFirstGuard = false;
     bool public isDoorOpen = false;
@@ -15,16 +16,15 @@ contract LaunchCodes {
     struct request {
         address requester;
         bool isEntry;
-        bool isApproovedByFirstGuard;
-        bool isApproovedBySecondGuard;
+        bool isApprovedByFirstGuard;
+        bool isApprovedBySecondGuard;
     }
 
     struct shiftChangeRequest {
         address oldGuard;
         address newGuard;
-        bool isApprooved;
+        bool isApproved;
     }
-
 
     constructor(address _firstGuard, address _secondGuard) {
         firstGuard = _firstGuard;
@@ -39,8 +39,8 @@ contract LaunchCodes {
         _;
     }
 
-    modifier approovedRequest() {
-        require(addressToRequest[msg.sender].isApproovedByFirstGuard && addressToRequest[msg.sender].isApproovedBySecondGuard, "Request is not approoved by both guards");
+    modifier approvedRequest() {
+        require(addressToRequest[msg.sender].isApprovedByFirstGuard && addressToRequest[msg.sender].isApprovedBySecondGuard, "Request is not approved by both guards");
         _;
     }
 
@@ -53,42 +53,47 @@ contract LaunchCodes {
     }
 
     /**
+     * csak kívülről lehet belépni
      * minden belépést mindkét őrnek engedélyezni kell
      */
-    function approoveEntry(address _requester) external onlyGuard {
-        require(addressToRequest[_requester].isEntry, "You can only approove entry requests");
-        //guardok bent vannak, ezért ez kiszűri őket
-        require(!checkPersonInFacility(_requester), "The requester is already in the building");
+    function approveEntry(address _requester) external onlyGuard {
+        require(addressToRequest[_requester].isEntry, "You can only approve entry requests");
+        require(!checkPersonInFacility(_requester), "The requester is already in the building"); //őrök bent vannak, ezért ez kiszűri őket
 
         if (msg.sender == firstGuard) {
-            addressToRequest[_requester].isApproovedByFirstGuard = true;
+            addressToRequest[_requester].isApprovedByFirstGuard = true;
         } else {
-            addressToRequest[_requester].isApproovedBySecondGuard = true;
+            addressToRequest[_requester].isApprovedBySecondGuard = true;
         }
     }
 
     /**
+     * csak belülről lehet kilépni
      * minden kilépést mindkét őrnek engedélyezni kell
+     * őrök nem léphetnek ki
      */
-    function approoveExit(address _requester) external onlyGuard {
-        require(!addressToRequest[_requester].isEntry, "You can only approove exit requests");
+    function approveExit(address _requester) external onlyGuard {
+        require(!addressToRequest[_requester].isEntry, "You can only approve exit requests");
         require(_requester != firstGuard || _requester != secondGuard, "Guards can't exit");
         require(checkPersonInFacility(_requester), "The requester is not in the building");
 
         if (msg.sender == firstGuard) {
-            addressToRequest[_requester].isApproovedByFirstGuard = true;
+            addressToRequest[_requester].isApprovedByFirstGuard = true;
         } else {
-            addressToRequest[_requester].isApproovedBySecondGuard = true;
+            addressToRequest[_requester].isApprovedBySecondGuard = true;
         }
     }
 
     /**
-     * shift changenel sem lephet be tobb, kivéve shiftchangerequest-ező
+     * shift change-nél nem lehet belépni, kivéve a shiftchangerequest-ező
+     * 3-nál többen nem lehetnek bent
      * megnézi, hogy a requestet mindkét őr elfogadta-e
+     * ajtót nyit, csuk
+     * staff-be belerak
      * logolni kell
      * request törlése
      */
-    function Enter() external approovedRequest {
+    function Enter() external approvedRequest {
         require (staff.length < 3, "There are already 3 people in the building");
         if (isShiftChangeInProgress) {
             require(msg.sender == actualShiftChangeRequest.newGuard, "You can't enter during a shift change");
@@ -102,15 +107,17 @@ contract LaunchCodes {
     }
 
     /**
-     * shiftchange végét beállítja, ha utoljára második guard volt cserélve és eddig shiftchange volt
      * megnézi, hogy a requestet mindkét őr elfogadta-e
+     * ajtót nyit
+     * staff-ból kivesz
      * logolni kell
      * request törlése
+     * shiftchange végét beállítja, ha utoljára második őr volt cserélve és eddig shiftchange volt
      */
-    function Exit() external approovedRequest {
-        //shift change-nél, ha az új őr még váltás előtt ki akarna menni
+    function Exit() external approvedRequest {
+        //shift change-nél, ha az új nem tud kimenni váltás nélkül (biztosra megy)
         if (isShiftChangeInProgress) {
-            require( msg.sender != actualShiftChangeRequest.newGuard, "You can't exit without shift change");
+            require (msg.sender != actualShiftChangeRequest.newGuard, "You can't exit without shift change");
         }
 
         isDoorOpen = true;
@@ -142,33 +149,45 @@ contract LaunchCodes {
     }
 
     /**
-     * guard aki cserél elfogadja és végbemegy a cseréje
-     * bool alapján nézzük, hogy melyik guardot kell cserélni, és hogy az is hívta-e meg
-     * csere után csinálunk a régi guardnak (aki ezt meghívta) egy exit request
+     * elég annak az őrnek elfogadnia, akivivel cserél
+     * elindul a shift change
+     * csere után belépési request-et csinálunk a kérelmezőnek
      */
-    function approoveShiftChange() external onlyGuard {
-        require (msg.sender == actualShiftChangeRequest.oldGuard, "You can't approove shift change");
+    function approveShiftChange() external onlyGuard {
+        require (msg.sender == actualShiftChangeRequest.oldGuard, "You can't approve shift change");
 
-        actualShiftChangeRequest.isApprooved = true;
+        actualShiftChangeRequest.isApproved = true;
         isShiftChangeInProgress = true;
         log.push("Shift change started");
 
-        addressToRequest[msg.sender] = request(msg.sender, true, false, false);
+        addressToRequest[actualShiftChangeRequest.newGuard] = request(actualShiftChangeRequest.newGuard, true, false, false);
     }
 
+    /**
+     * lecseréli a régebben cserélt őrt, ha elfogadták a cserét
+     * az új őrnek már be kellett lépnie
+     */
     function completeShiftChange() external onlyGuard {
-        require (actualShiftChangeRequest.isApprooved, "Shift change is not approoved");
+        require (actualShiftChangeRequest.isApproved, "Shift change is not approved");
         require (checkPersonInFacility(actualShiftChangeRequest.newGuard), "The new guard is not in the building");
 
         if (!lastChangeWasFirstGuard && actualShiftChangeRequest.oldGuard == firstGuard) {
             firstGuard = actualShiftChangeRequest.newGuard;
-            lastChangeWasFirstGuard = !lastChangeWasFirstGuard;
+            lastChangeWasFirstGuard = true;
         } else if (lastChangeWasFirstGuard && actualShiftChangeRequest.oldGuard == secondGuard) {
             secondGuard = actualShiftChangeRequest.newGuard;
-            lastChangeWasFirstGuard = !lastChangeWasFirstGuard;
+            lastChangeWasFirstGuard = false;
         }
     }
 
+    function getLog() external view returns (string[] memory) {
+        return log;
+    }
+
+    /**
+     * megnézi, hogy az adott című személy bent van-e a staff-ban
+     * @param _address keresett cím
+     */
     function checkPersonInFacility (address _address) internal view returns (bool) {
         for (uint i = 0; i < staff.length; i++) {
             if (staff[i] == _address) {
@@ -178,13 +197,17 @@ contract LaunchCodes {
         return false;
     }
 
+    /**
+     * kiveszi az adott című személyt a staff-ból
+     * @param _address keresett cím
+     */
     function removeFromStaff (address _address) internal {
-        // for (uint i = 0; i < staff.length; i++) {
-        //     if (staff[i] == _address) {
-        //         staff[i] = staff[staff.length - 1];
-        //         staff.pop();
-        //     }
-        // }
+        for (uint i = 0; i < staff.length; i++) {
+            if (staff[i] == _address) {
+                staff[i] = staff[staff.length - 1];
+                staff.pop();
+            }
+        }
     }
     
 }
