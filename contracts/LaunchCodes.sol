@@ -45,20 +45,21 @@ contract LaunchCodes {
     }
 
     /**
-     * be vagy kilépési kérés létrehozása, mapbe elmenteni
-     * kivűlről ne lehessen kimenőt kérni, belülről meg bemenőt
+     * Be- vagy kilépési kérelem létrehozása
+     * @param _isEntry belépés esetén true, kilépés esetén false
      */
     function makeRequest(bool _isEntry) external {
         addressToRequest[msg.sender] = request(msg.sender, _isEntry, false, false);
     }
 
     /**
-     * csak kívülről lehet belépni
-     * minden belépést mindkét őrnek engedélyezni kell
+     * Belépési kérelem elfogadása, ha:
+     * - a kérelem belépési kérelem
+     * - a kérelmező nincs még bent
      */
     function approveEntry(address _requester) external onlyGuard {
         require(addressToRequest[_requester].isEntry, "You can only approve entry requests");
-        require(!checkPersonInFacility(_requester), "The requester is already in the building"); //őrök bent vannak, ezért ez kiszűri őket
+        require(!checkPersonInFacility(_requester), "The requester is already in the building");
 
         if (msg.sender == firstGuard) {
             addressToRequest[_requester].isApprovedByFirstGuard = true;
@@ -68,16 +69,17 @@ contract LaunchCodes {
     }
 
     /**
-     * csak belülről lehet kilépni
-     * minden kilépést mindkét őrnek engedélyezni kell
-     * őrök nem léphetnek ki
+     * Kilépési kérelem elfogadása, ha:
+     * - a kérelem kilépési kérelem
+     * - a kérelmező bent van
+     * - a kérelmező nem őr
      */
     function approveExit(address _requester) external onlyGuard {
         require(!addressToRequest[_requester].isEntry, "You can only approve exit requests");
         require(_requester != firstGuard || _requester != secondGuard, "Guards can't exit");
         require(checkPersonInFacility(_requester), "The requester is not in the building");
 
-        if (msg.sender == firstGuard) {
+        if (msg.sender == firstGuard) { //Hívó alapján jegyezzük fel, hogy melyik őr fogadta
             addressToRequest[_requester].isApprovedByFirstGuard = true;
         } else {
             addressToRequest[_requester].isApprovedBySecondGuard = true;
@@ -85,13 +87,10 @@ contract LaunchCodes {
     }
 
     /**
-     * shift change-nél nem lehet belépni, kivéve a shiftchangerequest-ező
-     * 3-nál többen nem lehetnek bent
-     * megnézi, hogy a requestet mindkét őr elfogadta-e
-     * ajtót nyit, csuk
-     * staff-be belerak
-     * logolni kell
-     * request törlése
+     * Beléptetés, ha:
+     * - nincs 3 ember bent
+     * - rendelkezik a kérelmező elfogadott belépési kérelemmel
+     * - shift change esetében csak a leváltó őr léphet be
      */
     function Enter() external approvedRequest {
         require (staff.length < 3, "There are already 3 people in the building");
@@ -99,33 +98,32 @@ contract LaunchCodes {
             require(msg.sender == actualShiftChangeRequest.newGuard, "You can't enter during a shift change");
         }
 
-        isDoorOpen = true;
+        toggleDoor(true); 
         staff.push(msg.sender);
-        isDoorOpen = false;
+        toggleDoor(false);
+
         log.push(string.concat(toAsciiString(msg.sender), " entered"));
         delete addressToRequest[msg.sender];
     }
 
     /**
-     * megnézi, hogy a requestet mindkét őr elfogadta-e
-     * ajtót nyit
-     * staff-ból kivesz
-     * logolni kell
-     * request törlése
-     * shiftchange végét beállítja, ha utoljára második őr volt cserélve és eddig shiftchange volt
+     * Kiléptetés, ha:
+     * - rendelkezik a kérelmező elfogadott kilépési kérelemmel
      */
     function Exit() external approvedRequest {
-        //shift change-nél, ha az új nem tud kimenni váltás nélkül (biztosra megy)
+        //shift change-nél a leváltó őr nem tud kimenni leváltás nélkül (biztosra megy)
         if (isShiftChangeInProgress) {
             require (msg.sender != actualShiftChangeRequest.newGuard, "You can't exit without shift change");
         }
 
-        isDoorOpen = true;
+        toggleDoor(true);
         removeFromStaff(msg.sender);
-        isDoorOpen = false;
+        toggleDoor(false);
+
         log.push(string.concat(toAsciiString(msg.sender), " exited"));
         delete addressToRequest[msg.sender];
 
+        //ha megtörtént a második őr leváltása is, akkor lezárjuk a shift change-t
         if (isShiftChangeInProgress && !lastChangeWasFirstGuard) {
             isShiftChangeInProgress = false;
             delete actualShiftChangeRequest;
@@ -134,14 +132,22 @@ contract LaunchCodes {
     }
 
     /**
-     * létrejön egy shiftchange request
-     * létrejön egy belépő request is
+     * @param _toOpen true esetén nyit, false esetén zár
+     */
+    function toggleDoor(bool _toOpen) internal {
+        isDoorOpen = _toOpen;
+    }
+
+    /**
+     * Shift change kérelem létrehozása
+     * - csak kívülről lehet shift change-t kérni
+     * - a kérelem elfogadásáig nem indul el a folyamat
      */
     function requestShiftChange() external {
         //csak kívülről lehet shift change-t kérni
         require (!checkPersonInFacility(msg.sender), "You are in the building");
 
-        if (!lastChangeWasFirstGuard) {
+        if (!lastChangeWasFirstGuard) { //Minden szolgálatváltáskor először az elsőt, majd a második őrt váltjuk le
             actualShiftChangeRequest = shiftChangeRequest(msg.sender, firstGuard, false);
         } else {
             actualShiftChangeRequest = shiftChangeRequest(msg.sender, secondGuard, false);
@@ -149,9 +155,9 @@ contract LaunchCodes {
     }
 
     /**
-     * elég annak az őrnek elfogadnia, akivivel cserél
-     * elindul a shift change
-     * csere után belépési request-et csinálunk a kérelmezőnek
+     * Shift change kérelem elfogadása, melyet csak a leváltásra kijelölt őr tud elvégezni
+     * - kérelem elfogadásával elindul a shift change
+     * - a leváltó őr beléptetése elindul, ezzel ugyanúgy kell eljárnia mint sima belépésnél
      */
     function approveShiftChange() external onlyGuard {
         require (msg.sender == actualShiftChangeRequest.oldGuard, "You can't approve shift change");
@@ -164,8 +170,8 @@ contract LaunchCodes {
     }
 
     /**
-     * lecseréli a régebben cserélt őrt, ha elfogadták a cserét
-     * az új őrnek már be kellett lépnie
+     * Őr leváltási folyamat
+     * - csak a leváltásra kijelölt őr tudja végbevinni, ezzel is biztosítva, hogy a cserében résztvevő mindkét fél "akarja" azt, hisz a folyamatot a másik fél kezdeményezte
      */
     function completeShiftChange() external onlyGuard {
         require (actualShiftChangeRequest.isApproved, "Shift change is not approved");
@@ -180,13 +186,9 @@ contract LaunchCodes {
         }
     }
 
-    function getLog() external view returns (string[] memory) {
-        return log;
-    }
 
     /**
-     * megnézi, hogy az adott című személy bent van-e a staff-ban
-     * @param _address keresett cím
+     * @param _address megnézi, hogy a keresett című személy bent van-e a staff listában
      */
     function checkPersonInFacility (address _address) internal view returns (bool) {
         for (uint i = 0; i < staff.length; i++) {
@@ -198,8 +200,7 @@ contract LaunchCodes {
     }
 
     /**
-     * kiveszi az adott című személyt a staff-ból
-     * @param _address keresett cím
+     * @param _address kitörli a staff listából a keresett című személyt
      */
     function removeFromStaff (address _address) internal {
         for (uint i = 0; i < staff.length; i++) {
@@ -210,11 +211,15 @@ contract LaunchCodes {
         }
     }
 
+    function getLog() external view returns (string[] memory) {
+        return log;
+    }
+
     /**
-     * forrás: https://ethereum.stackexchange.com/questions/8346/convert-address-to-string
-     * felhasználás ideje: 2024.05.11.
+     * Forrás: https://ethereum.stackexchange.com/questions/8346/convert-address-to-string
+     * Felhasználás ideje: 2024.05.11.
      * 
-     * segít addrest string-gé alakítani a logoláshoz
+     * Segít addrest string-gé alakítani a logoláshoz
      * @param x address
      */
     function toAsciiString(address x) internal pure returns (string memory) {
@@ -230,8 +235,8 @@ contract LaunchCodes {
     }
 
     /**
-     * forrás: https://ethereum.stackexchange.com/questions/8346/convert-address-to-string
-     * felhasználás ideje: 2024.05.11.
+     * Forrás: https://ethereum.stackexchange.com/questions/8346/convert-address-to-string
+     * Felhasználás ideje: 2024.05.11.
      */
     function char(bytes1 b) internal pure returns (bytes1 c) {
         if (uint8(b) < 10) return bytes1(uint8(b) + 0x30);
