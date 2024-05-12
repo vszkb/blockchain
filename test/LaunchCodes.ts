@@ -7,12 +7,13 @@ import { ContractTransactionResponse } from 'ethers'
 import { LaunchCodes } from '../typechain-types'
 
 /**
- * belépés elfogadása mindkét őr által -> sikeres
- * belépés elfogadása egy őr által -> sikertelen
- * belépés elfogadásának próbája nem őrként -> sikertelen
- * belépés kérelmezése kívülről -> sikeres
- * belépés kérelmezése belülről -> sikertelen
- * belépés úgy, hogy tele van a bázis -> sikertelen
+ * belépés elfogadása mindkét őr által -> sikeres -
+ * belépés elfogadása egy őr által -> sikertelen -
+ * belépés elfogadásának próbája nem őrként -> sikertelen -
+ * belépés kérelmezése belülről -> sikertelen -
+ * kilépési kárelmezés elfogadása belépésként -> sikertelen -
+ * belépés úgy, hogy tele van a bázis -> sikertelen -
+ * belépés úgy, hogy tele van a bázis -> sikertelen , majd bázis kiürítése, majd belépés -> sikeres -
  * 
  * kilépés elfogadása mindkét őr által -> sikeres
  * kilépés kérelmezése belülről -> sikeres
@@ -72,23 +73,113 @@ describe('LaunchCodes', () => {
         it('Should let Staff enter', async () => {
             const { launchCodes, firstGuard, secondGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
 
+            // joe goes in
             await launchCodes.connect(JoeStaff).makeRequest(true);
             await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
             await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
             await launchCodes.connect(JoeStaff).Enter();
 
             //0x a hexadecimális formátum miatt kell, amit a log-olt cím nem tartalmaz, de a tesztérték igen
-            expect('0x' + (await launchCodes.getLog()).at(0)?.toLowerCase()).to.equal(JoeStaff.address.toLowerCase() + ' entered');
+            await expect('0x' + (await launchCodes.getLog()).at(0)).to.be.equal(JoeStaff.address.toLowerCase() + ' entered');
+        });
+
+        it('Should not let Staff enter, only one guard approves', async () => {
+            const { launchCodes, firstGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            // joe wants to go in
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+
+            // joe isnt approved by both guards
+            await expect(launchCodes.connect(JoeStaff).Enter()).to.be.revertedWith('Request is not approved by both guards');
+            await expect(launchCodes.getLog()).to.be.empty;
         });
 
         it('Should revert non guard entry approve', async () => {
-            const { launchCodes,  JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+            const { launchCodes, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
 
+            // joes entry request
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+
+            // joe tries to approve his own entry
             await expect(launchCodes.connect(JoeStaff).approveEntry(JoeStaff.address)).to.be.revertedWith('You are not a guard');
+        });
+
+        it('Should not allow entry requests to be made from inside', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff } = await await loadFixture(deployLaunchCodesFixture);
+
+            // joe goes in
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Enter();
+
+            // joe tries to make an entry request from inside
+            await launchCodes.connect(JoeStaff).makeRequest(true)
+            await expect(launchCodes.connect(firstGuard).approveEntry(JoeStaff.address)).to.be.revertedWith('The requester is already in the building');
+        });
+
+
+        it('Should not allow exit request to be approved as entry', async () => {
+            const { launchCodes, firstGuard, JoeStaff } = await await loadFixture(deployLaunchCodesFixture);
+
+            // joe requests to exit
+            await launchCodes.connect(JoeStaff).makeRequest(false);
+
+            // guard tries to approve exit as entry
+            await expect(launchCodes.connect(firstGuard).approveEntry(JoeStaff.address)).to.be.revertedWith('You can only approve entry requests');
+        });
+
+        it('Should not allow entry when facility is full', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff, BobStaff } = await await loadFixture(deployLaunchCodesFixture);
+
+            // joe goes in
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Enter();
+
+            // bob wants to go in
+            await launchCodes.connect(BobStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(BobStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(BobStaff.address);
+
+            // bob cant go in facility full
+            await expect(launchCodes.connect(BobStaff).Enter()).to.be.revertedWith('There are already 3 people in the building');
+        });
+
+        it('Should allow entry after facility is empty again', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff, BobStaff } = await await loadFixture(deployLaunchCodesFixture);
+
+            // joe goes in
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Enter();
+
+            //bob tries to go in
+            await launchCodes.connect(BobStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(BobStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(BobStaff.address);
+
+            // bob cant go in facility full
+            await expect(launchCodes.connect(BobStaff).Enter()).to.be.revertedWith('There are already 3 people in the building');
+
+            // joe comes out
+            await launchCodes.connect(JoeStaff).makeRequest(false);
+            await launchCodes.connect(firstGuard).approveExit(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveExit(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Exit();
+
+            // bob goes in
+            await launchCodes.connect(BobStaff).Enter();
+
+            // bob entered log
+            await expect('0x' + (await launchCodes.getLog()).at(2)).to.be.equal(BobStaff.address.toLowerCase() + ' entered');
         });
 
     });
 
 
-    });
+});
 
