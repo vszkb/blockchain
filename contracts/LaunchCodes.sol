@@ -141,6 +141,13 @@ contract LaunchCodes {
     }
 
     /**
+     * Visszaadja az ajtó állapotát
+     */
+    function getDoorStatus() external view returns (bool) {
+        return isDoorOpen;
+    }
+
+    /**
      * Shift change kérelem létrehozása
      * - csak kívülről lehet shift change-t kérni
      * - a kérelem elfogadásáig nem indul el a folyamat
@@ -150,9 +157,9 @@ contract LaunchCodes {
         require (!checkPersonInFacility(msg.sender), "You are in the building");
 
         if (!lastChangeWasFirstGuard) { //Minden szolgálatváltáskor először az elsőt, majd a második őrt váltjuk le
-            actualShiftChangeRequest = shiftChangeRequest(msg.sender, firstGuard, false);
+            actualShiftChangeRequest = shiftChangeRequest(firstGuard, msg.sender, false);
         } else {
-            actualShiftChangeRequest = shiftChangeRequest(msg.sender, secondGuard, false);
+            actualShiftChangeRequest = shiftChangeRequest(secondGuard, msg.sender, false);
         }
     }
 
@@ -162,12 +169,15 @@ contract LaunchCodes {
      * - a leváltó őr beléptetése elindul, ezzel ugyanúgy kell eljárnia mint sima belépésnél
      */
     function approveShiftChange() external onlyGuard {
-        require (msg.sender == actualShiftChangeRequest.oldGuard, "You can't approve shift change");
+        require (msg.sender == actualShiftChangeRequest.oldGuard, "You cant approve shift change");
+        require (staff.length < 3, "There is 3 people in the building");
 
         actualShiftChangeRequest.isApproved = true;
         isShiftChangeInProgress = true;
-        log.push("Shift change started");
-
+        if(!lastChangeWasFirstGuard){
+            log.push("Shift change started");
+        }
+        
         addressToRequest[actualShiftChangeRequest.newGuard] = request(actualShiftChangeRequest.newGuard, true, false, false);
     }
 
@@ -182,9 +192,11 @@ contract LaunchCodes {
         if (!lastChangeWasFirstGuard && actualShiftChangeRequest.oldGuard == firstGuard) {
             firstGuard = actualShiftChangeRequest.newGuard;
             lastChangeWasFirstGuard = true;
+            log.push("First guard changed");
         } else if (lastChangeWasFirstGuard && actualShiftChangeRequest.oldGuard == secondGuard) {
             secondGuard = actualShiftChangeRequest.newGuard;
             lastChangeWasFirstGuard = false;
+            log.push("Second guard changed");
         }
     }
 

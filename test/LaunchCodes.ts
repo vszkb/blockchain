@@ -95,16 +95,6 @@ describe('LaunchCodes', () => {
             await expect(launchCodes.getLog()).to.be.empty;
         });
 
-        it('Should revert non guard entry approve', async () => {
-            const { launchCodes, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
-
-            // joes entry request
-            await launchCodes.connect(JoeStaff).makeRequest(true);
-
-            // joe tries to approve his own entry
-            await expect(launchCodes.connect(JoeStaff).approveEntry(JoeStaff.address)).to.be.revertedWith('You are not a guard');
-        });
-
         it('Should not allow entry requests to be made from inside', async () => {
             const { launchCodes, firstGuard, secondGuard, JoeStaff } = await await loadFixture(deployLaunchCodesFixture);
 
@@ -190,17 +180,18 @@ describe('LaunchCodes', () => {
             await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
             await launchCodes.connect(JoeStaff).Enter();
 
+            await expect('0x' + (await launchCodes.getLog()).at(0)).to.be.equal(JoeStaff.address.toLowerCase() + ' entered');
+
             //Joe goes out
             await launchCodes.connect(JoeStaff).makeRequest(false);
             await launchCodes.connect(firstGuard).approveExit(JoeStaff.address);
             await launchCodes.connect(secondGuard).approveExit(JoeStaff.address);
             await launchCodes.connect(JoeStaff).Exit();
 
-            await expect('0x' + (await launchCodes.getLog()).at(0)).to.be.equal(JoeStaff.address.toLowerCase() + ' entered');
             await expect('0x' + (await launchCodes.getLog()).at(1)).to.be.equal(JoeStaff.address.toLowerCase() + ' exited');
         });
 
-        it('Should not let staff exit, only 1 guard approves', async () => {
+        it('Should not let staff exit, only one guard approves', async () => {
             const { launchCodes, firstGuard, secondGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
 
             //Joe goes in, to get out
@@ -238,18 +229,167 @@ describe('LaunchCodes', () => {
         it('Should not allow guard to exit', async () => {
             const { launchCodes, firstGuard, secondGuard } = await loadFixture(deployLaunchCodesFixture);
 
+            //Guard makes an exit request
             await launchCodes.connect(firstGuard).makeRequest(false);
 
             await expect(launchCodes.connect(secondGuard).approveExit(firstGuard.address)).to.be.revertedWith('Guards cant exit');
         });
+    });
 
-        it('Should revert non guard exit approve', async () => {
+    describe('Shift change', () => {
+        it('Should allow full shift change', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff, BobStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe requests a shift change
+            await launchCodes.connect(JoeStaff).requestShiftChange();
+            //First guard approves
+            await launchCodes.connect(firstGuard).approveShiftChange();
+
+            //Check if shift change started
+            await expect((await launchCodes.getLog()).at(0)).to.be.equal('Shift change started');
+            
+            //Guards approve the entry
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            //Joe enters
+            await launchCodes.connect(JoeStaff).Enter();
+
+            //Check if Joe entered
+            await expect('0x' + (await launchCodes.getLog()).at(1)).to.be.equal(JoeStaff.address.toLowerCase() + ' entered');
+            
+            //First guard completes the shift change
+            await launchCodes.connect(firstGuard).completeShiftChange();
+
+            //Check if switch happened
+            await expect((await launchCodes.getLog()).at(2)).to.be.equal('First guard changed');
+
+            //First guard makes an exit request
+            await launchCodes.connect(firstGuard).makeRequest(false);
+            //The guards with JoeStaff as new approve the exit
+            await launchCodes.connect(JoeStaff).approveExit(firstGuard.address);
+            await launchCodes.connect(secondGuard).approveExit(firstGuard.address);
+            //First guard exits
+            await launchCodes.connect(firstGuard).Exit();
+
+            //Check if first guard exited
+            await expect('0x' + (await launchCodes.getLog()).at(3)).to.be.equal(firstGuard.address.toLowerCase() + ' exited');
+
+            //Bob requests a shift change
+            await launchCodes.connect(BobStaff).requestShiftChange();
+            //Second guard approves
+            await launchCodes.connect(secondGuard).approveShiftChange();
+
+            //Guards approve the entry
+            await launchCodes.connect(JoeStaff).approveEntry(BobStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(BobStaff.address);
+            //Bob enters
+            await launchCodes.connect(BobStaff).Enter();
+
+            //Check if Bob entered
+            await expect('0x' + (await launchCodes.getLog()).at(4)).to.be.equal(BobStaff.address.toLowerCase() + ' entered');
+
+            //Second guard completes the shift change
+            await launchCodes.connect(secondGuard).completeShiftChange();
+
+            //Check if switch happened
+            await expect((await launchCodes.getLog()).at(5)).to.be.equal('Second guard changed');
+
+            //Second guard makes an exit request
+            await launchCodes.connect(secondGuard).makeRequest(false);
+            //The guards with BobStaff as new approve the exit
+            await launchCodes.connect(JoeStaff).approveExit(secondGuard.address);
+            await launchCodes.connect(BobStaff).approveExit(secondGuard.address);
+            //Second guard exits
+            await launchCodes.connect(secondGuard).Exit();
+
+            //Check if second guard exited
+            await expect('0x' + (await launchCodes.getLog()).at(6)).to.be.equal(secondGuard.address.toLowerCase() + ' exited');
+            //Check if shift change ended
+            await expect((await launchCodes.getLog()).at(7)).to.be.equal('Shift change ended');
+        });
+
+        it('Should not approve shift change request when facility is full', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff, BobStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe goes in
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Enter();
+
+            //Check if Joe entered
+            await expect('0x' + (await launchCodes.getLog()).at(0)).to.be.equal(JoeStaff.address.toLowerCase() + ' entered');
+
+            //Joe requests a shift change
+            await launchCodes.connect(BobStaff).requestShiftChange();
+            //First guard approves
+            await expect(launchCodes.connect(firstGuard).approveShiftChange()).to.be.revertedWith('There is 3 people in the building');
+        });
+
+        it('Should not let another guard approve the shift change', async () => {
+            const { launchCodes, secondGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe requests a shift change
+            await launchCodes.connect(JoeStaff).requestShiftChange();
+            //First guard approves
+            await expect(launchCodes.connect(secondGuard).approveShiftChange()).to.be.revertedWith('You cant approve shift change');
+        });
+
+        it('Should not let staff inside request shift change', async () => {
+            const { launchCodes, firstGuard } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe requests a shift change
+            await expect(launchCodes.connect(firstGuard).requestShiftChange()).to.be.revertedWith('You are in the building');
+        });
+
+        it('Should only complete approved shift change', async () => {
+            const { launchCodes, firstGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe requests a shift change
+            await launchCodes.connect(JoeStaff).requestShiftChange();
+
+            //First guard completes the shift change
+            await expect(launchCodes.connect(firstGuard).completeShiftChange()).to.be.revertedWith('Shift change is not approved');
+        });
+
+        it('Should only complete shift change when both participants are inside', async () => {
+            const { launchCodes, firstGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe requests a shift change
+            await launchCodes.connect(JoeStaff).requestShiftChange();
+            //First guard approves
+            await launchCodes.connect(firstGuard).approveShiftChange();
+
+            //First guard completes the shift change
+            await expect(launchCodes.connect(firstGuard).completeShiftChange()).to.be.revertedWith('The new guard is not in the building');
+        });
+    });
+
+    describe('OnlyGuard actions', () => {
+        it('Should only allow guards to call approveEntry', async () => {
             const { launchCodes, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
 
-            //Joe goes in, to get out
             await launchCodes.connect(JoeStaff).makeRequest(true);
-            //Joe tries to approve his own exit
+            await expect(launchCodes.connect(JoeStaff).approveEntry(JoeStaff.address)).to.be.revertedWith('You are not a guard');
+        });
+
+        it('Should only allow guards to call approveExit', async () => {
+            const { launchCodes, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            await launchCodes.connect(JoeStaff).makeRequest(true);
             await expect(launchCodes.connect(JoeStaff).approveExit(JoeStaff.address)).to.be.revertedWith('You are not a guard');
+        });
+
+        it('Should only allow guards to call approveShiftChange', async () => {
+            const { launchCodes, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            await expect(launchCodes.connect(JoeStaff).approveShiftChange()).to.be.revertedWith('You are not a guard');
+        });
+
+        it('Should only allow guards to call completeShiftChange', async () => {
+            const { launchCodes, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            await expect(launchCodes.connect(JoeStaff).completeShiftChange()).to.be.revertedWith('You are not a guard');
         });
     });
 
