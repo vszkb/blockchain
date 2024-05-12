@@ -97,7 +97,7 @@ contract LaunchCodes {
     function Enter() external approvedRequest {
         require (staff.length < 3, "There are already 3 people in the building");
         if (isShiftChangeInProgress) {
-            require(msg.sender == actualShiftChangeRequest.newGuard, "You can't enter during a shift change");
+            require(msg.sender == actualShiftChangeRequest.newGuard, "You cant enter during a shift change");
         }
 
         toggleDoor(true); 
@@ -115,7 +115,7 @@ contract LaunchCodes {
     function Exit() external approvedRequest {
         //shift change-nél a leváltó őr nem tud kimenni leváltás nélkül (biztosra megy)
         if (isShiftChangeInProgress) {
-            require (msg.sender != actualShiftChangeRequest.newGuard, "You can't exit without shift change");
+            require (msg.sender != actualShiftChangeRequest.newGuard, "You cant exit without shift change");
         }
 
         toggleDoor(true);

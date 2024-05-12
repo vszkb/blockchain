@@ -363,6 +363,40 @@ describe('LaunchCodes', () => {
             //First guard completes the shift change
             await expect(launchCodes.connect(firstGuard).completeShiftChange()).to.be.revertedWith('The new guard is not in the building');
         });
+
+        it('Should not approve entry if it isnt the participant in the request during shift change', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff, BobStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe requests a shift change
+            await launchCodes.connect(JoeStaff).requestShiftChange();
+            //First guard approves
+            await launchCodes.connect(firstGuard).approveShiftChange();
+
+            //Bob requests to enter
+            await launchCodes.connect(BobStaff).makeRequest(true);
+            //Guards approve
+            await launchCodes.connect(firstGuard).approveEntry(BobStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(BobStaff.address);
+
+            //Bob enters
+            await expect(launchCodes.connect(BobStaff).Enter()).to.be.revertedWith('You cant enter during a shift change');
+        });
+
+        it('Should not approve exit if the shift swap didnt happen', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe requests a shift change
+            await launchCodes.connect(JoeStaff).requestShiftChange();
+            //First guard approves
+            await launchCodes.connect(firstGuard).approveShiftChange();
+
+            //Guards approve the entry
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+
+            //First guard exits
+            await expect(launchCodes.connect(JoeStaff).Exit()).to.be.revertedWith('You cant exit without shift change');
+        });
     });
 
     describe('OnlyGuard actions', () => {
