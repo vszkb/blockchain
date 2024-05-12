@@ -56,6 +56,7 @@ contract LaunchCodes {
      * Belépési kérelem elfogadása, ha:
      * - a kérelem belépési kérelem
      * - a kérelmező nincs még bent
+     * @param _requester a kérelmező címe
      */
     function approveEntry(address _requester) external onlyGuard {
         require(addressToRequest[_requester].isEntry, "You can only approve entry requests");
@@ -73,10 +74,11 @@ contract LaunchCodes {
      * - a kérelem kilépési kérelem
      * - a kérelmező bent van
      * - a kérelmező nem őr
+     * @param _requester a kérelmező címe
      */
     function approveExit(address _requester) external onlyGuard {
         require(!addressToRequest[_requester].isEntry, "You can only approve exit requests");
-        require(_requester != firstGuard || _requester != secondGuard, "Guards can't exit");
+        require(_requester != firstGuard && _requester != secondGuard, "Guards cant exit");
         require(checkPersonInFacility(_requester), "The requester is not in the building");
 
         if (msg.sender == firstGuard) { //Hívó alapján jegyezzük fel, hogy melyik őr fogadta

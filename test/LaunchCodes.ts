@@ -180,6 +180,78 @@ describe('LaunchCodes', () => {
 
     });
 
+    describe('Exits', () => {
+        it('Should let staff exit', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe goes in, to get out
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Enter();
+
+            //Joe goes out
+            await launchCodes.connect(JoeStaff).makeRequest(false);
+            await launchCodes.connect(firstGuard).approveExit(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveExit(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Exit();
+
+            await expect('0x' + (await launchCodes.getLog()).at(0)).to.be.equal(JoeStaff.address.toLowerCase() + ' entered');
+            await expect('0x' + (await launchCodes.getLog()).at(1)).to.be.equal(JoeStaff.address.toLowerCase() + ' exited');
+        });
+
+        it('Should not let staff exit, only 1 guard approves', async () => {
+            const { launchCodes, firstGuard, secondGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe goes in, to get out
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            await launchCodes.connect(firstGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(secondGuard).approveEntry(JoeStaff.address);
+            await launchCodes.connect(JoeStaff).Enter();
+
+            //Joe tries to go out
+            await launchCodes.connect(JoeStaff).makeRequest(false);
+            await launchCodes.connect(firstGuard).approveExit(JoeStaff.address);
+
+            //Joe isnt approved by both guards
+            await expect(launchCodes.connect(JoeStaff).Exit()).to.be.revertedWith('Request is not approved by both guards');
+            await expect(launchCodes.getLog()).to.be.empty;
+        });
+
+        it('Should not allow exit requests to be made from outside', async () => {
+            const { launchCodes, firstGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe tries to make an exit request from outside
+            await launchCodes.connect(JoeStaff).makeRequest(false)
+            await expect(launchCodes.connect(firstGuard).approveExit(JoeStaff.address)).to.be.revertedWith('The requester is not in the building');
+        });
+
+        it('Should not allow exit request to be approved as entry', async () => {
+            const { launchCodes, firstGuard, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+            //Joe requests to exit
+            await launchCodes.connect(JoeStaff).makeRequest(false);
+
+            //Guard tries to approve exit as entry
+            await expect(launchCodes.connect(firstGuard).approveEntry(JoeStaff.address)).to.be.revertedWith('You can only approve entry requests');
+        });
+
+        it('Should not allow guard to exit', async () => {
+            const { launchCodes, firstGuard, secondGuard } = await loadFixture(deployLaunchCodesFixture);
+
+            await launchCodes.connect(firstGuard).makeRequest(false);
+
+            await expect(launchCodes.connect(secondGuard).approveExit(firstGuard.address)).to.be.revertedWith('Guards cant exit');
+        });
+
+        it('Should revert non guard exit approve', async () => {
+            const { launchCodes, JoeStaff } = await loadFixture(deployLaunchCodesFixture);
+
+            //Joe goes in, to get out
+            await launchCodes.connect(JoeStaff).makeRequest(true);
+            //Joe tries to approve his own exit
+            await expect(launchCodes.connect(JoeStaff).approveExit(JoeStaff.address)).to.be.revertedWith('You are not a guard');
+        });
+    });
 
 });
 
