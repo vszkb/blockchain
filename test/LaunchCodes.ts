@@ -92,7 +92,7 @@ describe('LaunchCodes', () => {
 
             // joe isnt approved by both guards
             await expect(launchCodes.connect(JoeStaff).Enter()).to.be.revertedWith('Request is not approved by both guards');
-            await expect(launchCodes.getLog()).to.be.empty;
+            await expect((await launchCodes.getLog()).length).to.be.equal(0);
         });
 
         it('Should not allow entry requests to be made from inside', async () => {
@@ -206,7 +206,7 @@ describe('LaunchCodes', () => {
 
             //Joe isnt approved by both guards
             await expect(launchCodes.connect(JoeStaff).Exit()).to.be.revertedWith('Request is not approved by both guards');
-            await expect(launchCodes.getLog()).to.be.empty;
+            await expect((await launchCodes.getLog()).length).to.be.equal(1); // Joe entered log
         });
 
         it('Should not allow exit requests to be made from outside', async () => {
