@@ -12,6 +12,8 @@ contract LaunchCodes {
 
     mapping (address => request) addressToRequest;
     shiftChangeRequest public actualShiftChangeRequest; 
+
+    event DoorStatusChanged();
     
     struct request {
         address requester;
@@ -138,6 +140,7 @@ contract LaunchCodes {
      */
     function toggleDoor(bool _toOpen) internal {
         isDoorOpen = _toOpen;
+        emit DoorStatusChanged();
     }
 
     /**
