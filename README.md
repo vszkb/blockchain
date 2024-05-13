@@ -18,4 +18,11 @@ requests and authorizations are supported by smart cards and electronic terminal
 7. Shift change must take place when the facility is empty, and no entry is allowed until it
    is over.
 8. Soldiers cannot enter or exit the facility while on guard duty.
+
    Design and implement a smart contract supporting the above access management protocol.
+   **Homework owner: Bertalan Zoltán Péter (bpeter@edu.bme.hu)**
+
+
+
+
+
